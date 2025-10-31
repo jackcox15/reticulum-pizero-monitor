@@ -1,0 +1,15 @@
+# Core Reticulum Network Stack
+RNS>=0.4.0
+lxmf>=0.3.0
+
+# Hardware interface for Raspberry Pi GPIO/SPI
+gpiozero>=1.6.2
+RPi.GPIO>=0.7.1
+
+# Display driver for ST7789 (Pimoroni Audio DAC)
+st7789>=0.0.4
+Pillow>=8.3.2
+
+# System monitoring and utilities
+psutil>=5.8.0
+
