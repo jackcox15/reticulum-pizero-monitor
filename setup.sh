@@ -15,6 +15,9 @@ if [ "$EUID" -eq 0 ]; then
    exit 1
 fi
 
+# real quick spi enable
+sudo raspi-config nonint do_spi 0
+
 echo "Installing system packages..."
 sudo apt update
 sudo apt install -y python3-pip python3-dev python3-pil lsof
