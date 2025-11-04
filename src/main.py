@@ -5,10 +5,9 @@ Pi Zero Display for Reticulum
 import time
 import psutil
 import platform
-import subprocess
-import glob
 from datetime import datetime
 from display import DisplayManager
+from services_monitor import check_rnsd, check_lora, check_wifi
 from buttons import button_a, button_b, button_x, button_y
 
 def get_stats():
@@ -56,6 +55,8 @@ class Pi_Monitor:
         self.current_screen = (self.current_screen -1) % self.max_screen
         print(f"Previous Screen: {self.screen[self.current_screen]}")
         
+        
+        
     def draw_status_screen(self, draw, theme, stats, timestamp):
          
         # Title
@@ -95,10 +96,39 @@ class Pi_Monitor:
         draw.text((20, 215), f"Arch: {platform.machine()}", 
                   font=theme.font_small, fill=theme.colors["text"])
     
-    
     def draw_services_screen(self, draw, theme, stats, timestamp):
-        draw.text((120, 120), "Services Running", font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
+        rnsd_running = check_rnsd()
+        lora_connected = check_lora()
+        wifi_active = check_wifi()
         
+        #Status screen title
+        draw.text((120, 10), "Services Monitor",
+                  font=theme.font_medium, fill=theme.colors["primary"],
+                  anchor="mm")
+        
+        #checking RNSD status
+        draw_panel_pil(draw, 10, 30, 220, 40, "Reticulum Daemon", theme)
+        if rnsd_running:
+            draw.text((20, 55), "Status: RUNNING",
+                      font=theme.font_small, fill=theme.colors["success"])
+        else:
+            draw.text((20, 55), "Status: STOPPED", font=theme.font_small, fill=theme.colors["fail"])
+            
+        #check LoRa USB connection
+        draw_panel_pil(draw, 10, 80, 220, 40, "LoRa Radio", theme)
+        if lora_connected:
+            draw.text((20, 105), "Status: CONNECTED",
+                      font=theme.font_small, fill=theme.colors["success"])
+        else:
+            draw.text((20, 105), "Status: NOT FOUND", font=theme.font_small,
+                      fill=theme.colors["fail"])
+            
+        #check WiFi AP status
+        draw_panel_pil(draw, 10, 130, 220, 40, "Wifi Access Point", theme)
+        if wifi_active:
+            draw.text((20, 155), "Status: ACTIVE", font=theme.font_small, fill=theme.colors["success"])
+                
+
     def draw_network_screen(self, draw, theme, stats, timestamp):
         draw.text((120, 120), "Network Monitoring",
                   font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
