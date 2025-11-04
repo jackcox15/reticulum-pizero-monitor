@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Simple Pi Zero Display for Reticulum
+Pi Zero Display for Reticulum
 """
 import time
 import psutil
 import platform
+import subprocess
+import glob
 from datetime import datetime
-import tkinter as tk
-from theme import Theme
+from display import DisplayManager
+from buttons import button_a, button_b, button_x, button_y
 
 def get_stats():
     return {
@@ -16,88 +18,107 @@ def get_stats():
         'disk': psutil.disk_usage('/').percent,
     }
 
-def draw_panel(canvas, x, y, width, height, title, theme):
-    canvas.create_rectangle(x, y, x + width, y + height, 
-                           fill=theme.colors["background"], 
-                           outline=theme.colors["primary"], width=2)
+def draw_panel_pil(draw, x, y, width, height, title, theme):
+    draw.rectangle([x, y, x + width, y + height], 
+                   fill=theme.colors["background"], 
+                   outline=theme.colors["primary"], 
+                   width=2)
     if title:
-        canvas.create_rectangle(x, y, x + width, y + 25, 
-                               fill=theme.colors["primary"], outline="")
-        canvas.create_text(x + 10, y + 12, text=title, 
-                          fill=theme.colors["background"], 
-                          anchor='w', font=("Courier", 10, "bold"))
+        draw.rectangle([x, y, x + width, y + 25], 
+                       fill=theme.colors["primary"])
+        draw.text((x + 10, y + 8), title, 
+                  font=theme.font_small, 
+                  fill=theme.colors["background"])
 
-class SimpleDisplay:
+class Pi_Monitor:
     def __init__(self):
-        self.theme = Theme()
-        self.root = tk.Tk()
-        self.root.title("Reticulum Monitor")
-        self.root.geometry("480x480")
-        self.root.configure(bg='black')
-        
-        self.canvas = tk.Canvas(self.root, width=480, height=480, bg='black')
-        self.canvas.pack()
-        
-        print("Display ready")
+        self.display = DisplayManager()
     
-    def get_status_color(self, value, warning_threshold, error_threshold):
-        """Return color based on status value"""
+        self.current_screen = 0
+        self.screen = ["systat", "services", "network", "setup"]
+        self.max_screen = len(self.screen)
+        button_a.when_pressed = self.next_screen
+        button_b.when_pressed = self.previous_screen
+        
+    def get_status_color(self, value, theme, warning_threshold, error_threshold):
         if value < warning_threshold:
-            return self.theme.colors["success"]
+            return theme.colors["success"]
         elif value < error_threshold:
-            return self.theme.colors["warning"]
+            return theme.colors["warning"]
         else:
-            return self.theme.colors["fail"]
+            return theme.colors["fail"]
+    
+    def next_screen(self):
+        self.current_screen = (self.current_screen + 1) % self.max_screen
+        print(f"Next Screen: {self.screen[self.current_screen]}")
         
-    def display_organized(self, stats, timestamp):
-        self.canvas.delete("all")
+    def previous_screen(self):
+        self.current_screen = (self.current_screen -1) % self.max_screen
+        print(f"Previous Screen: {self.screen[self.current_screen]}")
         
-        # Title text
-        self.canvas.create_text(240, 20, text="Reticulum Monitor", 
-                               fill=self.theme.colors["primary"], 
-                               font=("Courier", 16, "bold"))
+    def draw_status_screen(self, draw, theme, stats, timestamp):
+         
+        # Title
+        draw.text((120, 10), "Reticulum Monitor", 
+                  font=theme.font_medium, 
+                  fill=theme.colors["primary"], 
+                  anchor="mm")
         
         # Time panel
-        draw_panel(self.canvas, 20, 40, 440, 50, "Current Time:", self.theme)
-        self.canvas.create_text(30, 80, text=timestamp, 
-                               fill=self.theme.colors["text"], 
-                               anchor="w", font=("Courier", 12))
+        draw_panel_pil(draw, 10, 25, 220, 50, "Time", theme)
+        draw.text((20, 55), timestamp, 
+                  font=theme.font_medium, 
+                  fill=theme.colors["text"])
         
         # System stats panel
-        draw_panel(self.canvas, 20, 90, 440, 120, "System Status", self.theme)
+        draw_panel_pil(draw, 10, 80, 220, 80, "System Status", theme)
         
-        # CPU with color coding
-        cpu_color = self.get_status_color(stats['cpu'], 50, 80)
-        self.canvas.create_text(30, 140, text=f"CPU Usage: {stats['cpu']:.1f}%", 
-                               fill=cpu_color, anchor='w', font=('Courier', 11))
+        # CPU
+        cpu_color = self.get_status_color(stats['cpu'], theme, 50, 80)
+        draw.text((20, 105), f"CPU: {stats['cpu']:.1f}%", 
+                  font=theme.font_small, fill=cpu_color)
         
-        # Memory with color coding
-        mem_color = self.get_status_color(stats['memory'], 70, 85)
-        self.canvas.create_text(30, 160, text=f"Memory Usage: {stats['memory']:.1f}%", 
-                               fill=mem_color, anchor='w', font=('Courier', 11))
+        # Memory
+        mem_color = self.get_status_color(stats['memory'], theme, 70, 85)
+        draw.text((20, 125), f"RAM: {stats['memory']:.1f}%", 
+                  font=theme.font_small, fill=mem_color)
         
-        # Disk with color coding
-        disk_color = self.get_status_color(stats['disk'], 80, 90)
-        self.canvas.create_text(30, 180, text=f"Disk Usage: {stats['disk']:.1f}%", 
-                               fill=disk_color, anchor='w', font=('Courier', 11))
+        # Disk
+        disk_color = self.get_status_color(stats['disk'], theme, 80, 90)
+        draw.text((20, 145), f"Disk: {stats['disk']:.1f}%", 
+                  font=theme.font_small, fill=disk_color)
         
-        # Platform info panel
-        draw_panel(self.canvas, 20, 240, 440, 80, "Platform Info", self.theme)
-        self.canvas.create_text(30, 280, text=f"OS: {platform.system()}", 
-                               fill=self.theme.colors["text"], anchor='w', font=('Courier', 11))
-        self.canvas.create_text(30, 300, text=f"Architecture: {platform.machine()}", 
-                               fill=self.theme.colors["text"], anchor='w', font=('Courier', 11))
-        
-        self.root.update()
-
-
-#Main function execution
-class SimpleApp:
-    def __init__(self):
-        self.display = SimpleDisplay()
+        # Platform info
+        draw_panel_pil(draw, 10, 170, 220, 60, "Platform", theme)
+        draw.text((20, 195), f"OS: {platform.system()}", 
+                  font=theme.font_small, fill=theme.colors["text"])
+        draw.text((20, 215), f"Arch: {platform.machine()}", 
+                  font=theme.font_small, fill=theme.colors["text"])
     
+    
+    def draw_services_screen(self, draw, theme, stats, timestamp):
+        draw.text((120, 120), "Services Running", font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
+        
+    def draw_network_screen(self, draw, theme, stats, timestamp):
+        draw.text((120, 120), "Network Monitoring",
+                  font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
+        
+    def draw_setup_screen(self, draw, theme, stats, timestamp):
+        draw.text((120, 120), "Setup",
+                  font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
+     
+    def render_current_screen(self, draw, theme, stats, timestamp):
+        if self.current_screen == 0:
+            self.draw_status_screen(draw, theme, stats, timestamp)
+        elif self.current_screen == 1:  
+            self.draw_services_screen(draw, theme, stats, timestamp)
+        elif self.current_screen == 2:
+            self.draw_network_screen(draw, theme, stats, timestamp)
+        elif self.current_screen == 3: 
+            self.draw_setup_screen(draw, theme, stats, timestamp)
+        
     def run(self):
-        print("Reticulum Pi Zero Monitor")
+        print("Reticulum Pi Monitor")
         print("Press Ctrl+C to exit\n")
         
         try:
@@ -105,13 +126,15 @@ class SimpleApp:
                 stats = get_stats()
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 
-                self.display.display_organized(stats, timestamp)
+                # Render to hardware display
+                self.display.render(lambda draw, theme:
+                                    self.render_current_screen(draw, theme, stats, timestamp))
+                
                 time.sleep(1)
                 
         except KeyboardInterrupt:
             print("Monitor stopped")
 
 if __name__ == '__main__':
-    app = SimpleApp()
+    app = Pi_Monitor()
     app.run()
-
