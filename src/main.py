@@ -107,24 +107,24 @@ class Pi_Monitor:
                   anchor="mm")
         
         #checking RNSD status
-        draw_panel_pil(draw, 10, 30, 220, 40, "Reticulum Daemon", theme)
+        draw_panel_pil(draw, 10, 30, 220, 47, "Reticulum Daemon", theme)
         if rnsd_running:
-            draw.text((20, 55), "Status: RUNNING",
+            draw.text((18, 55), "Status: RUNNING",
                       font=theme.font_small, fill=theme.colors["success"])
         else:
-            draw.text((20, 55), "Status: STOPPED", font=theme.font_small, fill=theme.colors["fail"])
+            draw.text((18, 55), "Status: STOPPED", font=theme.font_small, fill=theme.colors["fail"])
             
         #check LoRa USB connection
-        draw_panel_pil(draw, 10, 80, 220, 40, "LoRa Radio", theme)
+        draw_panel_pil(draw, 10, 80, 220, 47, "LoRa Radio", theme)
         if lora_connected:
-            draw.text((20, 105), "Status: CONNECTED",
+            draw.text((18, 105), "Status: CONNECTED",
                       font=theme.font_small, fill=theme.colors["success"])
         else:
-            draw.text((20, 105), "Status: NOT FOUND", font=theme.font_small,
+            draw.text((18, 105), "Status: NOT FOUND", font=theme.font_small,
                       fill=theme.colors["fail"])
             
         #check WiFi AP status
-        draw_panel_pil(draw, 10, 130, 220, 40, "Wifi Access Point", theme)
+        draw_panel_pil(draw, 10, 130, 220, 47, "Wifi Access Point", theme)
         if wifi_active:
             draw.text((20, 155), "Status: ACTIVE", font=theme.font_small, fill=theme.colors["success"])
                 
