@@ -1,74 +1,11 @@
 #!/usr/bin/env python3
-"""
-LoRa Device Diagnostic Tool
-Tests device detection and monitoring without the display
-"""
 
 import glob
 import subprocess
-import time
 
-def find_serial_devices():
-    """Find all serial devices"""
-    print("=" * 50)
-    print("SERIAL DEVICE SCAN")
-    print("=" * 50)
-    
-    usb_devices = glob.glob('/dev/ttyUSB*')
-    acm_devices = glob.glob('/dev/ttyACM*')
-    all_devices = sorted(usb_devices + acm_devices)
-    
-    if not all_devices:
-        print("âŒ No serial devices found!")
-        print("\nTroubleshooting:")
-        print("1. Check USB cable connections")
-        print("2. Run 'lsusb' to see if device is detected")
-        print("3. Check dmesg for device errors: dmesg | tail -30")
-        return []
-    
-    print(f"âœ“ Found {len(all_devices)} device(s):\n")
-    
-    for device in all_devices:
-        print(f"ðŸ“¡ {device}")
-        
-        # Try to get device info with udevadm
-        try:
-            result = subprocess.run(
-                ['udevadm', 'info', '--name', device],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            
-            if result.returncode == 0:
-                # Extract useful info
-                for line in result.stdout.split('\n'):
-                    if 'ID_VENDOR=' in line or 'ID_MODEL=' in line or 'ID_SERIAL=' in line:
-                        print(f"   {line.strip()}")
-        except Exception as e:
-            print(f"   (Could not get device info: {e})")
-        
-        # Check permissions
-        try:
-            with open(device, 'r'):
-                print(f"   âœ“ Read access OK")
-        except PermissionError:
-            print(f"   âŒ Permission denied! Add user to 'dialout' group:")
-            print(f"      sudo usermod -a -G dialout $USER")
-        except:
-            pass
-        
-        print()
-    
-    return all_devices
+##################################
 
-def check_reticulum():
-    """Check Reticulum status"""
-    print("=" * 50)
-    print("RETICULUM STATUS")
-    print("=" * 50)
-    
-    # Check if rnsd service is running
+def check_rnsd():
     try:
         result = subprocess.run(
             ['systemctl', 'is-active', 'rnsd'],
@@ -76,17 +13,21 @@ def check_reticulum():
             text=True,
             timeout=2
         )
-        
-        if result.stdout.strip() == 'active':
-            print("âœ“ rnsd service is ACTIVE")
-        else:
-            print(f"âŒ rnsd service is {result.stdout.strip().upper()}")
-            print("   Start it with: sudo systemctl start rnsd")
-    except Exception as e:
-        print(f"âŒ Could not check rnsd: {e}")
+        return result.stdout.strip() == 'active'
+    except:
+        return False
+
+
+def check_lora():
+    usb_devices = glob.glob('/dev/ttyUSB*')
+    acm_devices = glob.glob('/dev/ttyACM*')
     
-    # Try to get rnstatus
-    print("\nTrying to query Reticulum status...")
+    # If either list has items, device is connected
+    return len(usb_devices) > 0 or len(acm_devices) > 0
+
+#####################################
+
+def get_rnstatus():
     try:
         result = subprocess.run(
             ['rnstatus'],
@@ -94,83 +35,64 @@ def check_reticulum():
             text=True,
             timeout=5
         )
-        
         if result.returncode == 0:
-            print("âœ“ Reticulum is responding")
-            print("\nOutput:")
-            print(result.stdout)
+            return result.stdout
         else:
-            print("âŒ rnstatus returned error")
-            print(result.stderr)
-    except FileNotFoundError:
-        print("âŒ rnstatus command not found!")
-        print("   Is Reticulum installed?")
-    except Exception as e:
-        print(f"âŒ Error: {e}")
-    
-    print()
+            return None
+    except:
+        return None
 
-def monitor_activity(devices, duration=10):
-    """Monitor devices for activity"""
-    if not devices:
-        print("No devices to monitor!")
-        return
+#####################################
     
-    print("=" * 50)
-    print(f"MONITORING ACTIVITY ({duration}s)")
-    print("=" * 50)
-    print("Watching for data on serial devices...")
-    print("(Press Ctrl+C to stop)\n")
+def parse_traffic(rnstatus_output):
+
+    if rnstatus_output is None:
+        return None
     
     try:
-        for i in range(duration):
-            for device in devices:
-                # Check if device is being used
-                try:
-                    result = subprocess.run(
-                        ['lsof', device],
-                        capture_output=True,
-                        timeout=1
-                    )
-                    
-                    if result.returncode == 0:
-                        # Device is open
-                        processes = result.stdout.decode().strip().split('\n')[1:]
-                        if processes and processes[0]:
-                            process_info = processes[0].split()
-                            print(f"ðŸ“¡ {device}: ACTIVE (used by {process_info[0]})")
-                    else:
-                        print(f"âšª {device}: idle")
-                except:
-                    print(f"âšª {device}: unknown")
-            
-            time.sleep(1)
-            if i < duration - 1:
-                print()
-    
-    except KeyboardInterrupt:
-        print("\n\nMonitoring stopped.")
+        lines = rnstatus_output.split('\n')
+        tx_bps = 0
+        rx_bps = 0
+        
+        for i, line in enumerate(lines):
+            if 'Traffic' in line and '↑' in line:
+                # This line has upload (TX) info
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    if 'bps' in part and j > 0:
+                        tx_bps = int(parts[j-1])
+                        break
+                
+                # Next line should have download (RX)
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1]
+                    if '↓' in next_line:
+                        parts = next_line.split()
+                        for j, part in enumerate(parts):
+                            if 'bps' in part and j > 0:
+                                rx_bps = int(parts[j-1])
+                                break
+                break
+        
+        return {
+            'tx_bps': tx_bps,
+            'rx_bps': rx_bps
+        }
+    except:
+        return None
 
-def main():
-    print("\n" + "="*50)
-    print("ðŸ”§ LoRa Device Diagnostic Tool")
-    print("="*50 + "\n")
-    
-    # Find devices
-    devices = find_serial_devices()
-    
-    # Check Reticulum
-    check_reticulum()
-    
-    # Optionally monitor
-    if devices:
-        print("\nWould you like to monitor device activity? (y/n): ", end='')
-        # For script automation, we'll skip this and just show we can
-        print("\n(Skipping in automated mode)\n")
-        # Uncomment below for interactive use:
-        # response = input().lower()
-        # if response == 'y':
-        #     monitor_activity(devices)
 
-if __name__ == '__main__':
-    main()
+def check_wifi():
+
+    try:
+        result = subprocess.run(
+            ['ip', 'link', 'show', 'wlan0'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        # If command succeeds and output contains "UP"
+        return result.returncode == 0 and 'UP' in result.stdout
+    except:
+        return False
+

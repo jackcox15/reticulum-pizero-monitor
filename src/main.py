@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""
-Pi Zero Display for Reticulum
-"""
+
 import time
 import psutil
 import platform
 from datetime import datetime
 from display import DisplayManager
 from services_monitor import check_rnsd, check_lora, check_wifi
+from diag import check_rnsd, check_lora, get_rnstatus, parse_traffic, check_wifi
 from buttons import button_a, button_b, button_x, button_y
 
 def get_stats():
@@ -56,6 +55,7 @@ class Pi_Monitor:
         print(f"Previous Screen: {self.screen[self.current_screen]}")
         
         
+#####################################################################################
         
     def draw_status_screen(self, draw, theme, stats, timestamp):
          
@@ -95,7 +95,9 @@ class Pi_Monitor:
                   font=theme.font_small, fill=theme.colors["text"])
         draw.text((20, 215), f"Arch: {platform.machine()}", 
                   font=theme.font_small, fill=theme.colors["text"])
-    
+        
+###########################################################################
+        
     def draw_services_screen(self, draw, theme, stats, timestamp):
         rnsd_running = check_rnsd()
         lora_connected = check_lora()
@@ -109,34 +111,59 @@ class Pi_Monitor:
         #checking RNSD status
         draw_panel_pil(draw, 10, 30, 220, 47, "Reticulum Daemon", theme)
         if rnsd_running:
-            draw.text((18, 55), "Status: RUNNING",
+            draw.text((18, 58), "Status: RUNNING",
                       font=theme.font_small, fill=theme.colors["success"])
         else:
-            draw.text((18, 55), "Status: STOPPED", font=theme.font_small, fill=theme.colors["fail"])
+            draw.text((18, 58), "Status: STOPPED", font=theme.font_small, fill=theme.colors["fail"])
             
         #check LoRa USB connection
         draw_panel_pil(draw, 10, 80, 220, 47, "LoRa Radio", theme)
         if lora_connected:
-            draw.text((18, 105), "Status: CONNECTED",
+            draw.text((18, 108), "Status: CONNECTED",
                       font=theme.font_small, fill=theme.colors["success"])
         else:
-            draw.text((18, 105), "Status: NOT FOUND", font=theme.font_small,
+            draw.text((18, 108), "Status: NOT FOUND", font=theme.font_small,
                       fill=theme.colors["fail"])
             
         #check WiFi AP status
         draw_panel_pil(draw, 10, 130, 220, 47, "Wifi Access Point", theme)
         if wifi_active:
             draw.text((20, 155), "Status: ACTIVE", font=theme.font_small, fill=theme.colors["success"])
-                
+
+###############################################################################
 
     def draw_network_screen(self, draw, theme, stats, timestamp):
-        draw.text((120, 120), "Network Monitoring",
-                  font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
+        rnstatus_output = get_rnstatus()
+        traffic_data = parse_traffic(rnstatus_output)
+        
+        if traffic_data is not None:
+            tx_bps = traffic_data['tx_bps']
+            rx_bps = traffic_data['rx_bps']
+        else:
+            tx_bps = 0
+            rx_bps = 0
+        
+        
+        draw.text((120, 10), "Network Monitoring", font=theme.font_medium, fill=theme.colors["primary"], anchor="mm")
+        
+        draw_panel_pil(draw, 10, 30, 220, 15, "LoRa Network", theme)
+        draw.text((18, 58), f"TX: {tx_bps} bps / RX {rx_bps} bps", font=theme.font_small, fill=theme.colors["secondary"])
+               
+        
+        draw_panel_pil(draw, 10, 130, 220, 47, "IP Monitoring", theme)
+        draw.text((20, 155), "Internet: ", font=theme.font_small, fill=theme.colors["secondary"])
+        
+
+    
+#################################################################################
         
     def draw_setup_screen(self, draw, theme, stats, timestamp):
         draw.text((120, 120), "Setup",
                   font=theme.font_large, fill=theme.colors["primary"], anchor="mm")
      
+    
+#################################################################################
+        
     def render_current_screen(self, draw, theme, stats, timestamp):
         if self.current_screen == 0:
             self.draw_status_screen(draw, theme, stats, timestamp)
