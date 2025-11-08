@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import glob
+import psutil
 import subprocess
 
 ##################################
@@ -81,7 +82,7 @@ def parse_traffic(rnstatus_output):
     except:
         return None
 
-
+##########################################
 def check_wifi():
 
     try:
@@ -96,3 +97,33 @@ def check_wifi():
     except:
         return False
 
+############################################
+    
+def get_active_interfaces():
+    try:
+        net_stats = psutil.net_if_stats()
+        active = []
+        
+        for interface, stats in net_stats.items():
+            if interface == 'lo':
+                continue
+            if stats.isup:
+                active.append(interface)
+        return active
+    except:
+        return []
+    
+def get_interface_traffic(interface_name):
+    try:
+        net_io = psutil.net_io_counters(pernic=True)
+        
+        if interface_name in net_io:
+            stats = net_io[interface_name]
+            return {
+                'bytes_sent': stats.bytes_sent,
+                'bytes_recv': stats.bytes_recv
+            }
+        else:
+            return None
+    except:
+        return None

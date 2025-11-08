@@ -6,7 +6,7 @@ import platform
 from datetime import datetime
 from display import DisplayManager
 from services_monitor import check_rnsd, check_lora, check_wifi
-from diag import check_rnsd, check_lora, get_rnstatus, parse_traffic, check_wifi
+from diag import check_rnsd, check_lora, get_rnstatus, parse_traffic, check_wifi, get_active_interfaces, get_interface_traffic
 from buttons import button_a, button_b, button_x, button_y
 
 def get_stats():
@@ -15,6 +15,24 @@ def get_stats():
         'memory': psutil.virtual_memory().percent,
         'disk': psutil.disk_usage('/').percent,
     }
+
+def draw_graph(draw, x, y, width, height, data, color, max_value=100):
+   
+    if len(data) < 2:
+        return
+    
+    x_step = width / (len(data) - 1)
+    
+    for i in range(len(data) - 1):
+        val1 = data[i]
+        x1 = x + (i * x_step)
+        y1 = y + height - ((val1 / max_value) * height)
+        
+        val2 = data[i + 1]
+        x2 = x + ((i + 1) * x_step)
+        y2 = y + height - ((val2 / max_value) * height)
+        
+        draw.line([(x1, y1), (x2, y2)], fill=color, width=2)
 
 def draw_panel_pil(draw, x, y, width, height, title, theme):
     draw.rectangle([x, y, x + width, y + height], 
@@ -37,6 +55,18 @@ class Pi_Monitor:
         self.max_screen = len(self.screen)
         button_a.when_pressed = self.next_screen
         button_b.when_pressed = self.previous_screen
+        
+        #network monitor
+        self.lora_tx_history = []
+        self.lora_rx_history = []
+        self.ip_tx_history = []
+        self.ip_rx_history = []
+        self.prev_ip_bytes_sent = 0
+        self.prev_ip_bytes_recv = 0
+        self.active_interface = None
+        
+        print("DEBUGGING: Init complete, all attributes set")
+        
         
     def get_status_color(self, value, theme, warning_threshold, error_threshold):
         if value < warning_threshold:
@@ -136,22 +166,96 @@ class Pi_Monitor:
         rnstatus_output = get_rnstatus()
         traffic_data = parse_traffic(rnstatus_output)
         
+        #LoRa traffic monitoring
         if traffic_data is not None:
             tx_bps = traffic_data['tx_bps']
             rx_bps = traffic_data['rx_bps']
         else:
             tx_bps = 0
             rx_bps = 0
+            
+        self.lora_tx_history.append(tx_bps)
+        self.lora_rx_history.append(rx_bps)
         
+        if len(self.lora_tx_history) > 30:
+            self.lora_tx_history.pop(0)
+        if len(self.lora_rx_history) > 30:
+            self.lora_rx_history.pop(0)
         
+        #IP traffic monitoring
+        active_interfaces = get_active_interfaces()
+        
+        print(f"DEBUG: Active interfaces: {active_interfaces}")  # ADD THIS
+        print(f"DEBUG: Current active_interface: {self.active_interface}")  # ADD THIS
+
+        
+        if active_interfaces:
+            if self.active_interface is None or self.active_interface not in active_interfaces:
+                self.active_interface = active_interfaces[0]
+                print(f"DEBUG: Set active_interface to: {self.active_interface}") 
+                
+            traffic = get_interface_traffic(self.active_interface)
+            
+            if traffic is not None:
+                ip_tx_bps = (traffic['bytes_sent'] - self.prev_ip_bytes_sent) * 8
+                ip_rx_bps = (traffic['bytes_recv'] - self.prev_ip_bytes_recv) * 8
+                
+                if ip_tx_bps < 0:
+                    ip_tx_bps = 0
+                if ip_rx_bps < 0:
+                    ip_rx_bps = 0
+                
+                self.prev_ip_bytes_sent = traffic['bytes_sent']
+                self.prev_ip_bytes_recv = traffic['bytes_recv']
+                
+                self.ip_tx_history.append(ip_tx_bps)
+                self.ip_rx_history.append(ip_rx_bps)
+                
+                if len(self.ip_tx_history) > 30:
+                    self.ip_tx_history.pop(0)
+                if len(self.ip_rx_history) > 30:
+                    self.ip_rx_history.pop(0)
+            else:
+                ip_tx_bps = 0
+                ip_rx_bps = 0
+        else:
+            ip_tx_bps = 0
+            ip_rx_bps = 0
+            self.active_interface = None
+            
+        
+        #draw LoRa and IP monitoring graphs + text
         draw.text((120, 10), "Network Monitoring", font=theme.font_medium, fill=theme.colors["primary"], anchor="mm")
         
-        draw_panel_pil(draw, 10, 30, 220, 15, "LoRa Network", theme)
-        draw.text((18, 58), f"TX: {tx_bps} bps / RX {rx_bps} bps", font=theme.font_small, fill=theme.colors["secondary"])
-               
+        draw_panel_pil(draw, 10, 30, 220, 70, "LoRa Network", theme)
+        draw.text((18, 58), f"TX: {tx_bps} bps / RX: {rx_bps} bps", font=theme.font_small, fill=theme.colors["text"])
         
-        draw_panel_pil(draw, 10, 130, 220, 47, "IP Monitoring", theme)
-        draw.text((20, 155), "Internet: ", font=theme.font_small, fill=theme.colors["secondary"])
+        draw_graph(draw, 15, 65, 210, 30, self.lora_tx_history, theme.colors["success"], max_value=1000)
+               
+        draw_panel_pil(draw, 10, 110, 220, 70, "IP Monitoring", theme)
+                
+        if self.active_interface:
+            # Convert to Kbps for readability
+            tx_kbps = ip_tx_bps / 1000
+            rx_kbps = ip_rx_bps / 1000
+            
+            # Text starts after title bar (Y=135) + padding
+            draw.text((18, 140), f"{self.active_interface}", 
+                      font=theme.font_small, fill=theme.colors["text"])
+            draw.text((18, 152), f"TX: {tx_kbps:.1f}K", 
+                      font=theme.font_small, fill=theme.colors["success"])
+            draw.text((18, 164), f"RX: {rx_kbps:.1f}K",
+                      font=theme.font_small, fill=theme.colors["warning"])
+            
+            # Graph positioned properly inside panel
+            # Panel content starts at Y=135, give 40px for text, then graph
+            draw_graph(draw, 15, 178, 210, 35, self.ip_tx_history, 
+                       theme.colors["warning"], max_value=100000)
+        else:
+            draw.text((18, 145), "No active interface", 
+                      font=theme.font_small, fill=theme.colors["fail"])
+                        
+                
         
 
     
